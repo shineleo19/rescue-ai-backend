@@ -1,0 +1,9 @@
+const express = require('express');
+const router = express.Router();
+const userController = require('../controllers/userController'); // <-- This fixes the ReferenceError!
+const { verifyToken } = require('../middleware/auth');
+
+// This handles the PUT /api/users/profile request
+router.put('/profile', verifyToken, userController.updateProfile);
+
+module.exports = router;
