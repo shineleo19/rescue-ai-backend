@@ -5,5 +5,7 @@ const { verifyToken } = require('../middleware/auth');
 
 // This handles the PUT /api/users/profile request
 router.put('/profile', verifyToken, userController.updateProfile);
+// PUT /api/users/availability
+router.put('/availability', verifyToken, userController.updateAvailability);
 
 module.exports = router;

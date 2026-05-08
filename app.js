@@ -25,6 +25,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/incidents', require('./routes/incidents')); // <-- ADD THIS LINE
 app.use('/api/resources', require('./routes/resources'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/resources', require('./routes/resources'));
 
 // Global Error Handler
 app.use((err, req, res, next) => {

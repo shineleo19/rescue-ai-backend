@@ -47,6 +47,8 @@ io.on('connection', (socket) => {
 
   // 2. When the Volunteer's phone sends a new GPS coordinate
   socket.on('update_location', (data) => {
+
+    console.log(`🚀 RELAYING GPS DATA FOR INCIDENT ${data.incidentId}: ${data.latitude}, ${data.longitude}`);
     // Instantly forward this to the Victim's phone in the same room!
     // data should look like: { incidentId: '7', latitude: 8.188, longitude: 77.433 }
     socket.to(data.incidentId).emit('live_location_update', data);

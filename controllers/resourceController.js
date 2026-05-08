@@ -43,3 +43,23 @@ exports.updateLocation = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to update location' });
   }
 };
+
+
+exports.getAllResources = async (req, res) => {
+  try {
+    // We fetch everything so the map knows where every unit is
+    const { rows } = await db.query(`SELECT * FROM resources ORDER BY id ASC`);
+    
+    res.status(200).json({ 
+      success: true, 
+      count: rows.length,
+      resources: rows 
+    });
+  } catch (error) {
+    console.error("Error fetching resources:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error fetching resources from database" 
+    });
+  }
+};

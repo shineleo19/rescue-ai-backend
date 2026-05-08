@@ -2,6 +2,102 @@ const db = require('../config/database');
 const admin = require('../config/firebase'); // Make sure this points to your initialized firebase-admin
 const { calculateDistance } = require('../utils/helpers');
 
+async function dispatchToNearbyVolunteers(incidentId, victimLat, victimLng, incidentType) {
+  try {
+    // 1. The Haversine SQL Query (2km radius)
+    const nearbyQuery = `
+      SELECT * FROM (
+        SELECT id, fcm_token, name,
+        ( 6371 * acos( cos( radians($1) ) * cos( radians( latitude ) ) * cos( radians( longitude ) - radians($2) ) + 
+          sin( radians($1) ) * sin( radians( latitude ) ) ) 
+        ) AS distance
+        FROM users
+        WHERE user_type = 'volunteer' -- Matches your schema!
+        AND is_available = true 
+        AND fcm_token IS NOT NULL
+      ) AS nearby_volunteers
+      WHERE distance <= 2.0 
+      ORDER BY distance ASC;
+    `;
+
+    const { rows: volunteers } = await db.query(nearbyQuery, [victimLat, victimLng]);
+
+    console.log(`📍 Found ${volunteers.length} volunteers within 2km!`);
+
+    if (volunteers.length === 0) {
+      console.log("⚠️ No volunteers nearby.");
+      return;
+    }
+
+    // 2. Extract FCM Tokens
+    const tokens = volunteers.map(v => v.fcm_token);
+
+    // 3. Build Push Notification Payload
+    const message = {
+      notification: {
+        title: '🚨 Emergency Nearby!',
+        body: `A ${incidentType} was reported near your location. Tap to respond.`,
+      },
+      data: {
+        type: 'volunteer_alert',
+        incident_id: incidentId.toString(),
+        incident_type: incidentType,
+        distance: `${volunteers[0].distance.toFixed(1)} km`, 
+      },
+      tokens: tokens, 
+    };
+
+    // 4. Blast via Firebase
+    const response = await admin.messaging().sendMulticast(message);
+    console.log(`🔔 Alerts sent! Success: ${response.successCount}, Failed: ${response.failureCount}`);
+
+  } catch (error) {
+    console.error("💥 Error dispatching to volunteers:", error);
+  }
+}
+
+
+// 👻 THE "DUMB" SILENT PING ENGINE
+async function sendSilentWakeUpPing(incidentId, victimLat, victimLng, incidentType) {
+  try {
+    // 1. DUMB QUERY: Grab ALL on-duty volunteers. No distance math at all!
+    // -> Perfectly adapted for your specific 'db' and 'user_type' setup
+    const { rows: volunteers } = await db.query(
+      `SELECT fcm_token FROM users 
+       WHERE user_type = 'volunteer' 
+       AND is_available = true 
+       AND fcm_token IS NOT NULL`
+    );
+
+    console.log(`📡 Found ${volunteers.length} available volunteers on-duty!`);
+
+    if (volunteers.length === 0) {
+      console.log("⚠️ No volunteers are currently marked as available.");
+      return;
+    }
+
+    const tokens = volunteers.map(v => v.fcm_token);
+
+    // 2. THE SILENT PAYLOAD (No 'notification' block)
+    const message = {
+      data: {
+        type: 'silent_sos_ping',
+        incident_id: String(incidentId),
+        victim_lat: String(victimLat),
+        victim_lng: String(victimLng),
+        incident_type: incidentType || "Emergency"
+      },
+      tokens: tokens, // Array of all valid FCM tokens
+    };
+
+    // 3. Blast the ping
+    const response = await admin.messaging().sendEachForMulticast(message);
+    console.log(`👻 Silent Wake-up Pings sent! Success: ${response.successCount}, Failed: ${response.failureCount}`);
+  } catch (error) {
+    console.error("💥 Error sending silent ping:", error);
+  }
+}
+
 exports.createIncident = async (req, res) => {
   try {
     const { latitude, longitude, incident_type, severity, description } = req.body;
@@ -20,54 +116,11 @@ exports.createIncident = async (req, res) => {
     );
     let incident = insertResult.rows[0];
 
-    // ====================================================================
-    // 🚨 NEW: 5km SQL Haversine Volunteer Alert Logic
-    // ====================================================================
-    try {
-      // Calculates distance natively in PostgreSQL and filters <= 5.0km
-      const nearbyVolunteers = await db.query(
-        `SELECT fcm_token FROM users 
-         WHERE user_type = 'citizen' 
-         AND fcm_token IS NOT NULL
-         AND latitude IS NOT NULL 
-         AND longitude IS NOT NULL
-         AND (
-           6371 * acos(
-             cos(radians($1)) * cos(radians(latitude)) * 
-             cos(radians(longitude) - radians($2)) + 
-             sin(radians($1)) * sin(radians(latitude))
-           )
-         ) <= 5.0`, 
-        [latitude, longitude]
-      );
+    sendSilentWakeUpPing(incident.id, latitude, longitude, incident_type)
+      .catch(err => console.error("Background Ping Error:", err));
 
-      const tokens = nearbyVolunteers.rows.map(user => user.fcm_token);
+    
 
-      if (tokens.length > 0) {
-        const message = {
-          notification: {
-            title: '🚨 EMERGENCY NEARBY!',
-            body: `A ${severity} ${incident_type} has been reported within 5km. Can you provide first aid?`,
-          },
-          data: {
-            type: 'volunteer_alert',
-            incident_id: String(incident.id),
-            incident_type: incident_type || "Emergency",
-            latitude: String(latitude),
-            longitude: String(longitude)
-          },
-          tokens: tokens,
-        };
-
-        const response = await admin.messaging().sendMulticast(message);
-        console.log(`✅ Sent ${response.successCount} push notifications to nearby volunteers.`);
-      } else {
-        console.log(`ℹ️ No volunteers found within 5km of the incident.`);
-      }
-    } catch (fcmError) {
-      console.error("💥 FCM Alert Error (Continuing with ambulance dispatch):", fcmError);
-    }
-    // ====================================================================
 
     // 2. Find ALL 'available' resources (ambulances, police, etc.)
     const resources = await db.query(`SELECT * FROM resources WHERE status = 'available'`);
@@ -98,12 +151,14 @@ exports.createIncident = async (req, res) => {
 
       // --- SOCKET.IO LOGIC ---
       const io = req.app.get('io');
-      io.emit('new_incident', { incident, resource: nearestResource });
-      io.to(`incident_${incident.id}`).emit('dispatch_confirmed', {
-        message: "Ambulance assigned and en route!",
-        resource: nearestResource,
-        eta_minutes: Math.round((minDistance / 40) * 60)
-      });
+      if (io) {
+        io.emit('new_incident', { incident, resource: nearestResource });
+        io.to(`incident_${incident.id}`).emit('dispatch_confirmed', {
+          message: "Ambulance assigned and en route!",
+          resource: nearestResource,
+          eta_minutes: Math.round((minDistance / 40) * 60)
+        });
+      }
       
       return res.status(201).json({
         success: true,
@@ -116,10 +171,10 @@ exports.createIncident = async (req, res) => {
       });
     }
 
-    // 5. If no resources are available
+    // 5. If no resources are available (but volunteers might still be alerted!)
     res.status(201).json({
       success: true,
-      message: "SOS Logged. Searching for available units...",
+      message: "SOS Logged. Alerting nearby volunteers and searching for units...",
       incident
     });
 

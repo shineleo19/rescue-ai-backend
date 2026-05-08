@@ -50,3 +50,37 @@ exports.updateProfile = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error updating profile" });
   }
 };
+
+
+exports.updateAvailability = async (req, res) => {
+  try {
+    const userId = req.user.id; // Comes from your JWT auth middleware
+    const { is_available } = req.body;
+
+    // Safety check: Ensure the frontend actually sent a boolean
+    if (typeof is_available !== 'boolean') {
+      return res.status(400).json({ 
+        success: false, 
+        message: "is_available must be a boolean (true or false)" 
+      });
+    }
+
+    const newRole = is_available ? 'volunteer' : 'citizen';
+
+    await db.query(
+      `UPDATE users SET is_available = $1, user_type = $2 
+      WHERE id = $3 
+      RETURNING is_available, user_type`,
+      [is_available, newRole, userId]
+    );    
+  
+    res.status(200).json({ 
+      success: true, 
+      message: is_available ? "You are now On-Duty and ready to receive SOS pings!" : "You are now Off-Duty." 
+    });
+
+  } catch (error) {
+    console.error("Error updating availability:", error);
+    res.status(500).json({ success: false, message: "Server error updating availability" });
+  }
+};
