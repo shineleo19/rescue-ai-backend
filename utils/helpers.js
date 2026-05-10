@@ -1,4 +1,4 @@
-// Calculates the distance between two GPS coordinates in kilometers
+// calculate distance (km) between two lat/lon points
 exports.calculateDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371; // Earth's radius in km
   const dLat = (lat2 - lat1) * (Math.PI / 180);

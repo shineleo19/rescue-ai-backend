@@ -2,12 +2,11 @@ const jwt = require('jsonwebtoken');
 const admin = require('../config/firebase');
 
 
+// verify firebase token and return backend jwt
 exports.verifyFirebaseToken = async (req, res) => {
   try {
     const { firebaseToken } = req.body;
     let phone;
-
-    // Check for the mock bypass first
     if (firebaseToken === 'TEST_MODE_123') {
       console.log('Mock login detected. Bypassing Firebase...');
       phone = '+919876543210';
@@ -15,8 +14,6 @@ exports.verifyFirebaseToken = async (req, res) => {
       if (!firebaseToken) {
         return res.status(400).json({ success: false, message: 'Firebase token is required' });
       }
-
-      // Verify the token with Firebase Admin SDK
       const decodedToken = await admin.auth().verifyIdToken(firebaseToken);
       phone = decodedToken.phone_number;
     }
@@ -25,11 +22,11 @@ exports.verifyFirebaseToken = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Phone number not found' });
     }
 
-    // Check if user exists in our PostgreSQL database
+    // check or create user in postgres
     let result = await db.query('SELECT * FROM users WHERE phone = $1', [phone]);
     let user = result.rows[0];
 
-    // If new user, insert them into PostgreSQL
+    // insert new user if missing
     if (!user) {
       const insertResult = await db.query(
         'INSERT INTO users (phone, user_type) VALUES ($1, $2) RETURNING *',
@@ -38,7 +35,7 @@ exports.verifyFirebaseToken = async (req, res) => {
       user = insertResult.rows[0];
     }
 
-    // Generate our backend's JWT Token
+    // generate backend jwt
     const payload = { id: user.id, phone: user.phone, user_type: user.user_type };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRY });
 
@@ -49,6 +46,7 @@ exports.verifyFirebaseToken = async (req, res) => {
   }
 };
 
+// return current authenticated user
 exports.getMe = async (req, res) => {
   try {
     const result = await db.query('SELECT id, phone, name, email, user_type, blood_type, allergies FROM users WHERE id = $1', [req.user.id]);
@@ -63,6 +61,7 @@ exports.getMe = async (req, res) => {
 
 const db = require('../config/database');
 
+// update user's fcm token in db
 exports.updateFCMToken = async (req, res) => {
   try {
     const { fcm_token } = req.body;
@@ -72,7 +71,6 @@ exports.updateFCMToken = async (req, res) => {
       return res.status(400).json({ success: false, message: "FCM token is required" });
     }
 
-    // Update the user's row with their new phone token
     await db.query(
       `UPDATE users SET fcm_token = $1 WHERE id = $2`,
       [fcm_token, user_id]
@@ -86,6 +84,7 @@ exports.updateFCMToken = async (req, res) => {
 };
 
 
+// firebase login: find/create user and return token
 exports.firebaseLogin = async (req, res) => {
   try {
     const { phone } = req.body;
@@ -94,9 +93,7 @@ exports.firebaseLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing phone number' });
     }
 
-    // 1. FIND OR CREATE THE USER IN POSTGRESQL (The UPSERT Magic)
-    // If the phone exists, it just updates the timestamp and returns the user.
-    // If the phone is new, it creates a blank row and returns the user.
+    // upsert user by phone
     const result = await db.query(
       `INSERT INTO users (phone) 
        VALUES ($1) 
@@ -108,8 +105,7 @@ exports.firebaseLogin = async (req, res) => {
 
     const user = result.rows[0];
 
-    // 2. GENERATE THE MASSIVE SECURE NODE.JS JWT
-    // Make sure you have a JWT_SECRET in your backend .env file!
+    // generate jwt (ensure JWT_SECRET present)
     const token = jwt.sign(
       { 
         id: user.id, // Give the token your PostgreSQL database ID
@@ -120,7 +116,7 @@ exports.firebaseLogin = async (req, res) => {
       { expiresIn: '30d' }
     );
 
-    // 3. SEND IT BACK TO FLUTTER!
+    // return token and user
     res.status(200).json({
       success: true,
       token: token, // Flutter saves this and uses it for everything else!
@@ -134,12 +130,10 @@ exports.firebaseLogin = async (req, res) => {
   }
 };
 
+// return user profile by id
 exports.getUserProfile = async (req, res) => {
   try {
-    // 1. Get the user ID from the token (from your verifyToken middleware)
-    const userId = req.user.id; 
-
-    // 2. Find the user in PostgreSQL
+    const userId = req.user.id;
     const { rows } = await db.query(
       `SELECT id, name, phone, user_type, is_available, 
               blood_type, allergies, medical_conditions, 
@@ -149,13 +143,9 @@ exports.getUserProfile = async (req, res) => {
       [userId]
     );
 
-    // If no user comes back, they don't exist
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-
-    // 3. Send the data back to Flutter!
-    // We wrap it in a "user" object exactly how your Flutter app expects it.
     res.status(200).json({
       success: true,
       user: rows[0]

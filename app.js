@@ -5,14 +5,14 @@ const morgan = require('morgan');
 
 const app = express();
 
-// Global Middleware
-app.use(helmet()); // Security headers
-app.use(cors()); // Allow requests from your mobile app
-app.use(express.json({ limit: '10mb' })); // Allow large payloads for base64 images
+// global middleware
+app.use(helmet());
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev')); // Log API requests to terminal
+app.use(morgan('dev')); 
 
-// Health Check Route (To test if API is alive)
+// health check
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     success: true, 
@@ -20,15 +20,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ✅ THIS IS THE MAGIC LINE: It connects app.js to routes/auth.js
+// mount routes
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/incidents', require('./routes/incidents')); // <-- ADD THIS LINE
+app.use('/api/incidents', require('./routes/incidents'));
 app.use('/api/resources', require('./routes/resources'));
 app.use('/api/users', require('./routes/users'));
-app.use('/api/resources', require('./routes/resources'));
-app.use('/api/auth', require('./routes/auth'));
 
-// Global Error Handler
+// global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.statusCode || 500).json({

@@ -6,7 +6,7 @@ const app = require('./app');
 
 const PORT = process.env.PORT || 3000;
 
-// 1. Initialize Database Connection
+// initialize DB connection
 const pool = new Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
@@ -19,13 +19,13 @@ pool.connect()
   .then(() => console.log('✅ PostgreSQL Connected successfully'))
   .catch(err => console.error('❌ Database connection error:', err.message));
 
-// Export pool so we can use it in our controllers later
+// export DB pool
 module.exports.pool = pool;
 
-// 2. Create HTTP Server
+// create HTTP server
 const server = http.createServer(app);
 
-// 3. Initialize Socket.io for Real-Time Tracking
+// init socket.io
 const io = new Server(server, {
   cors: {
     origin: '*', // Allow all origins for the hackathon
@@ -33,24 +33,23 @@ const io = new Server(server, {
   }
 });
 
-// Make io available inside our Express routes
+// attach io to app
 app.set('io', io);
 
 io.on('connection', (socket) => {
   console.log(`🔌 New mobile app/dashboard connected: ${socket.id}`);
 
-  // 1. When a user (Victim or Volunteer) opens the map for a specific emergency
+  // when a client joins an incident room
   socket.on('join_incident', (incidentId) => {
     socket.join(incidentId);
     console.log(`📍 Device joined Incident Room: ${incidentId}`);
   });
 
-  // 2. When the Volunteer's phone sends a new GPS coordinate
+  // relay volunteer GPS updates
   socket.on('update_location', (data) => {
 
     console.log(`🚀 RELAYING GPS DATA FOR INCIDENT ${data.incidentId}: ${data.latitude}, ${data.longitude}`);
-    // Instantly forward this to the Victim's phone in the same room!
-    // data should look like: { incidentId: '7', latitude: 8.188, longitude: 77.433 }
+    // forward to room members
     socket.to(data.incidentId).emit('live_location_update', data);
   });
 

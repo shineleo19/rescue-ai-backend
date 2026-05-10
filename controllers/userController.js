@@ -1,11 +1,10 @@
 const db = require('../config/database');
 
+// get user profile
 exports.getUserProfile = async (req, res) => {
   try {
-    // user id from auth middleware
     const userId = req.user.id;
 
-    // fetch user record
     const { rows } = await db.query(
       `SELECT id, name, phone,email, user_type, is_available, 
               blood_type, allergies, medical_conditions, 
@@ -17,7 +16,6 @@ exports.getUserProfile = async (req, res) => {
 
     if (rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
 
-    // return profile
     res.status(200).json({ success: true, user: rows[0] });
 
   } catch (error) {
@@ -26,9 +24,10 @@ exports.getUserProfile = async (req, res) => {
   }
 };
 
+// update user profile in database
 exports.updateProfile = async (req, res) => {
   try {
-    const userId = req.user.id; // from token
+    const userId = req.user.id;
 
     // destructure allowed profile fields
     const { 
@@ -43,7 +42,6 @@ exports.updateProfile = async (req, res) => {
       emergency_contact_2_phone
     } = req.body;
 
-    // update with COALESCE to preserve existing values
     await db.query(
       `UPDATE users 
        SET 
@@ -75,12 +73,12 @@ exports.updateProfile = async (req, res) => {
 };
 
 
+// update user's availability and location
 exports.updateAvailability = async (req, res) => {
   try {
-    const userId = req.user.id; // from token
+    const userId = req.user.id;
     const { is_available, latitude, longitude } = req.body;
 
-    // validate boolean
     if (typeof is_available !== 'boolean') return res.status(400).json({ success: false, message: 'is_available must be boolean' });
 
     const newRole = is_available ? 'volunteer' : 'citizen';

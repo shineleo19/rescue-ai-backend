@@ -2,9 +2,9 @@ const db = require('../config/database');
 const admin = require('../config/firebase'); // Make sure this points to your initialized firebase-admin
 const { calculateDistance } = require('../utils/helpers');
 
+// dispatch alerts to nearby volunteers
 async function dispatchToNearbyVolunteers(incidentId, victimLat, victimLng, incidentType) {
   try {
-    // 1. The Haversine SQL Query (2km radius)
     const nearbyQuery = `
       SELECT * FROM (
         SELECT id, fcm_token, name,
@@ -29,10 +29,8 @@ async function dispatchToNearbyVolunteers(incidentId, victimLat, victimLng, inci
       return;
     }
 
-    // 2. Extract FCM Tokens
     const tokens = volunteers.map(v => v.fcm_token);
-
-    // 3. Build Push Notification Payload
+    // build push payload
     const message = {
       notification: {
         title: '🚨 Emergency Nearby!',
@@ -47,7 +45,6 @@ async function dispatchToNearbyVolunteers(incidentId, victimLat, victimLng, inci
       tokens: tokens, 
     };
 
-    // 4. Blast via Firebase
     const response = await admin.messaging().sendMulticast(message);
     console.log(`🔔 Alerts sent! Success: ${response.successCount}, Failed: ${response.failureCount}`);
 
@@ -57,11 +54,9 @@ async function dispatchToNearbyVolunteers(incidentId, victimLat, victimLng, inci
 }
 
 
-// 👻 THE "DUMB" SILENT PING ENGINE
+// send silent ping to all on-duty volunteers
 async function sendSilentWakeUpPing(incidentId, victimLat, victimLng, incidentType) {
   try {
-    // 1. DUMB QUERY: Grab ALL on-duty volunteers. No distance math at all!
-    // -> Perfectly adapted for your specific 'db' and 'user_type' setup
     const { rows: volunteers } = await db.query(
       `SELECT fcm_token FROM users 
        WHERE user_type = 'volunteer' 
@@ -78,7 +73,6 @@ async function sendSilentWakeUpPing(incidentId, victimLat, victimLng, incidentTy
 
     const tokens = volunteers.map(v => v.fcm_token);
 
-    // 2. THE SILENT PAYLOAD (No 'notification' block)
     const message = {
       data: {
         type: 'silent_sos_ping',
@@ -90,7 +84,6 @@ async function sendSilentWakeUpPing(incidentId, victimLat, victimLng, incidentTy
       tokens: tokens, // Array of all valid FCM tokens
     };
 
-    // 3. Blast the ping
     const response = await admin.messaging().sendEachForMulticast(message);
     console.log(`👻 Silent Wake-up Pings sent! Success: ${response.successCount}, Failed: ${response.failureCount}`);
   } catch (error) {
@@ -98,17 +91,17 @@ async function sendSilentWakeUpPing(incidentId, victimLat, victimLng, incidentTy
   }
 }
 
+// create a new incident in db and attempt dispatch
 exports.createIncident = async (req, res) => {
   try {
     const { latitude, longitude, incident_type, severity, description } = req.body;
-    const user_id = req.user.id; // Comes securely from our JWT auth middleware
+    const user_id = req.user.id;
 
-    // Bouncer (Safety Check)
     if (!latitude || !longitude) {
       return res.status(400).json({ success: false, message: "GPS required" });
     }
 
-    // 1. Insert the new emergency incident into the database
+    // insert incident
     const insertResult = await db.query(
       `INSERT INTO incidents (user_id, latitude, longitude, incident_type, severity, description, status) 
        VALUES ($1, $2, $3, $4, $5, $6, 'pending') RETURNING *`,
@@ -122,13 +115,12 @@ exports.createIncident = async (req, res) => {
     
 
 
-    // 2. Find ALL 'available' resources (ambulances, police, etc.)
     const resources = await db.query(`SELECT * FROM resources WHERE status = 'available'`);
     
     let nearestResource = null;
     let minDistance = Infinity;
 
-    // 3. Loop through resources to find the closest one
+    // find nearest resource
     for (let resource of resources.rows) {
       const dist = calculateDistance(latitude, longitude, resource.latitude, resource.longitude);
       if (dist < minDistance) {
@@ -137,7 +129,7 @@ exports.createIncident = async (req, res) => {
       }
     }
 
-    // 4. If we found an ambulance nearby, AUTO-DISPATCH it!
+    // auto-dispatch nearest resource if available
     if (nearestResource) {
       await db.query(`UPDATE incidents SET status = 'dispatched' WHERE id = $1`, [incident.id]);
       incident.status = 'dispatched';
@@ -149,7 +141,7 @@ exports.createIncident = async (req, res) => {
         [incident.id, nearestResource.id]
       );
 
-      // --- SOCKET.IO LOGIC ---
+      // socket.io notifications
       const io = req.app.get('io');
       if (io) {
         io.emit('new_incident', { incident, resource: nearestResource });
@@ -171,7 +163,7 @@ exports.createIncident = async (req, res) => {
       });
     }
 
-    // 5. If no resources are available (but volunteers might still be alerted!)
+    // if no resources, alert volunteers
     res.status(201).json({
       success: true,
       message: "SOS Logged. Alerting nearby volunteers and searching for units...",
@@ -184,9 +176,9 @@ exports.createIncident = async (req, res) => {
   }
 };
 
+// list recent incidents
 exports.getIncidents = async (req, res) => {
   try {
-    // Fetch all incidents for the dashboard, ordered by newest first
     const result = await db.query(`SELECT * FROM incidents ORDER BY created_at DESC LIMIT 50`);
     res.status(200).json({ success: true, count: result.rowCount, data: result.rows });
   } catch (error) {
@@ -196,10 +188,9 @@ exports.getIncidents = async (req, res) => {
 };
 
 
-// Fetch incident history (newest first)
+// fetch incident history
 exports.getIncidentHistory = async (req, res) => {
   try {
-    // Queries the database for all incidents, sorted by newest ID first
     const history = await db.query(`SELECT * FROM incidents ORDER BY id DESC LIMIT 50`);
     
     res.status(200).json({ 
@@ -214,7 +205,7 @@ exports.getIncidentHistory = async (req, res) => {
 };
 
 
-// Update incident status (e.g., marking it as 'resolved')
+// update incident status and free resources
 exports.updateIncident = async (req, res) => {
   const incidentId = req.params.id; // Grabs the '45' from the URL
   const { status, resource_id, incident_type, severity, description } = req.body;
