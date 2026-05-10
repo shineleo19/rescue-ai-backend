@@ -1,5 +1,38 @@
 const db = require('../config/database');
 
+exports.getUserProfile = async (req, res) => {
+  try {
+    // 1. Get the user ID from the token (from your verifyToken middleware)
+    const userId = req.user.id; 
+
+    // 2. Find the user in PostgreSQL
+    const { rows } = await db.query(
+      `SELECT id, name, phone,email, user_type, is_available, 
+              blood_type, allergies, medical_conditions, 
+              emergency_contact_1, emergency_contact_1_phone, 
+              emergency_contact_2, emergency_contact_2_phone 
+       FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    // If no user comes back, they don't exist
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // 3. Send the data back to Flutter!
+    // We wrap it in a "user" object exactly how your Flutter app expects it.
+    res.status(200).json({
+      success: true,
+      user: rows[0]
+    });
+
+  } catch (error) {
+    console.error("Fetch Profile Error:", error);
+    res.status(500).json({ success: false, message: 'Server error fetching profile' });
+  }
+};
+
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.id; // From your JWT token
@@ -7,7 +40,7 @@ exports.updateProfile = async (req, res) => {
     // Extracting the EXACT columns from your schema
     const { 
       name, 
-      email, 
+      email,
       blood_type, 
       allergies, 
       medical_conditions, 

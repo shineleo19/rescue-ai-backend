@@ -6,6 +6,7 @@ const { verifyToken } = require('../middleware/auth');
 
 // We only need one public route now for Firebase!
 router.post('/verify-firebase', authController.verifyFirebaseToken);
+router.post('/firebase-login', authController.firebaseLogin);
 
 router.put('/fcm-token', verifyToken, authController.updateFCMToken);
 
