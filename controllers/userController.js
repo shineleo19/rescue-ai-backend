@@ -21,7 +21,7 @@ exports.getUserProfile = async (req, res) => {
     res.status(200).json({ success: true, user: rows[0] });
 
   } catch (error) {
-    console.error("Fetch Profile Error:", error);
+    console.error('Fetch Profile Error:', error);
     res.status(500).json({ success: false, message: 'Server error fetching profile' });
   }
 };
