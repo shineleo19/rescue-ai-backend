@@ -2,10 +2,10 @@ const db = require('../config/database');
 
 exports.getUserProfile = async (req, res) => {
   try {
-    // 1. Get the user ID from the token (from your verifyToken middleware)
-    const userId = req.user.id; 
+    // user id from auth middleware
+    const userId = req.user.id;
 
-    // 2. Find the user in PostgreSQL
+    // fetch user record
     const { rows } = await db.query(
       `SELECT id, name, phone,email, user_type, is_available, 
               blood_type, allergies, medical_conditions, 
@@ -15,17 +15,10 @@ exports.getUserProfile = async (req, res) => {
       [userId]
     );
 
-    // If no user comes back, they don't exist
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
 
-    // 3. Send the data back to Flutter!
-    // We wrap it in a "user" object exactly how your Flutter app expects it.
-    res.status(200).json({
-      success: true,
-      user: rows[0]
-    });
+    // return profile
+    res.status(200).json({ success: true, user: rows[0] });
 
   } catch (error) {
     console.error("Fetch Profile Error:", error);
@@ -35,9 +28,9 @@ exports.getUserProfile = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    const userId = req.user.id; // From your JWT token
-    
-    // Extracting the EXACT columns from your schema
+    const userId = req.user.id; // from token
+
+    // destructure allowed profile fields
     const { 
       name, 
       email,
@@ -50,7 +43,7 @@ exports.updateProfile = async (req, res) => {
       emergency_contact_2_phone
     } = req.body;
 
-    // The COALESCE trick ensures we don't accidentally erase data if the user leaves a field blank
+    // update with COALESCE to preserve existing values
     await db.query(
       `UPDATE users 
        SET 
@@ -73,30 +66,22 @@ exports.updateProfile = async (req, res) => {
       ]
     );
 
-    res.status(200).json({ 
-      success: true, 
-      message: "Profile updated successfully!" 
-    });
+    res.status(200).json({ success: true, message: 'Profile updated' });
 
   } catch (error) {
-    console.error("Error updating profile:", error);
-    res.status(500).json({ success: false, message: "Server error updating profile" });
+    console.error('Error updating profile:', error);
+    res.status(500).json({ success: false, message: 'Server error updating profile' });
   }
 };
 
 
 exports.updateAvailability = async (req, res) => {
   try {
-    const userId = req.user.id; // Comes from your JWT auth middleware
+    const userId = req.user.id; // from token
     const { is_available, latitude, longitude } = req.body;
 
-    // Safety check: Ensure the frontend actually sent a boolean
-    if (typeof is_available !== 'boolean') {
-      return res.status(400).json({ 
-        success: false, 
-        message: "is_available must be a boolean (true or false)" 
-      });
-    }
+    // validate boolean
+    if (typeof is_available !== 'boolean') return res.status(400).json({ success: false, message: 'is_available must be boolean' });
 
     const newRole = is_available ? 'volunteer' : 'citizen';
 
@@ -105,15 +90,12 @@ exports.updateAvailability = async (req, res) => {
       WHERE id = $5 
       RETURNING is_available, user_type`,
       [is_available, newRole, latitude, longitude, userId]
-    );    
-  
-    res.status(200).json({ 
-      success: true, 
-      message: is_available ? "You are now On-Duty and ready to receive SOS pings!" : "You are now Off-Duty." 
-    });
+    );
+
+    res.status(200).json({ success: true, message: is_available ? 'Now On-Duty' : 'Now Off-Duty' });
 
   } catch (error) {
-    console.error("Error updating availability:", error);
-    res.status(500).json({ success: false, message: "Server error updating availability" });
+    console.error('Error updating availability:', error);
+    res.status(500).json({ success: false, message: 'Server error updating availability' });
   }
 };
