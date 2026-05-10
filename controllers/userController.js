@@ -88,7 +88,7 @@ exports.updateProfile = async (req, res) => {
 exports.updateAvailability = async (req, res) => {
   try {
     const userId = req.user.id; // Comes from your JWT auth middleware
-    const { is_available } = req.body;
+    const { is_available, latitude, longitude } = req.body;
 
     // Safety check: Ensure the frontend actually sent a boolean
     if (typeof is_available !== 'boolean') {
@@ -101,10 +101,10 @@ exports.updateAvailability = async (req, res) => {
     const newRole = is_available ? 'volunteer' : 'citizen';
 
     await db.query(
-      `UPDATE users SET is_available = $1, user_type = $2 
-      WHERE id = $3 
+      `UPDATE users SET is_available = $1, user_type = $2, latitude = $3, longitude = $4 
+      WHERE id = $5 
       RETURNING is_available, user_type`,
-      [is_available, newRole, userId]
+      [is_available, newRole, latitude, longitude, userId]
     );    
   
     res.status(200).json({ 
