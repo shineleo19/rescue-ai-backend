@@ -4,7 +4,11 @@ CREATE TABLE IF NOT EXISTS users (
     phone VARCHAR(15) UNIQUE NOT NULL,
     name VARCHAR(100),
     email VARCHAR(100),
-    user_type VARCHAR(20), -- 'citizen', 'dispatcher', 'admin'
+    user_type VARCHAR(20) DEFAULT 'citizen', -- 'citizen', 'dispatcher', 'admin'
+    is_available BOOLEAN DEFAULT FALSE,
+    latitude DECIMAL(10, 8),
+    longitude DECIMAL(11, 8),
+    volunteer_status VARCHAR(20) DEFAULT 'none', -- 'none', 'pending', 'approved', 'rejected'
     blood_type VARCHAR(5),
     allergies TEXT,
     medical_conditions TEXT,
@@ -27,6 +31,8 @@ CREATE TABLE IF NOT EXISTS incidents (
     severity VARCHAR(20), 
     status VARCHAR(20) DEFAULT 'pending', 
     description TEXT,
+    accepted_by INTEGER REFERENCES users(id),
+    accepted_at TIMESTAMP,
     photo_url TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     resolved_at TIMESTAMP,
@@ -71,3 +77,17 @@ CREATE TABLE IF NOT EXISTS location_history (
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
 CREATE INDEX IF NOT EXISTS idx_resources_status ON resources(status);
+
+-- Volunteer Applications Table
+CREATE TABLE IF NOT EXISTS volunteer_applications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER UNIQUE REFERENCES users(id),
+    full_name VARCHAR(100),
+    skills TEXT,
+    vehicle_type VARCHAR(50),
+    notes TEXT,
+    status VARCHAR(20) DEFAULT 'pending',
+    reviewed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);

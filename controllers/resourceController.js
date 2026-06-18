@@ -61,3 +61,50 @@ exports.getAllResources = async (req, res) => {
     });
   }
 };
+
+exports.createResource = async (req, res) => {
+  try {
+    const { resource_type, vehicle_number, driver_name, driver_phone, latitude, longitude, status } = req.body;
+    const { rows } = await db.query(
+      `INSERT INTO resources (resource_type, vehicle_number, driver_name, driver_phone, latitude, longitude, status)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'available'))
+       RETURNING *`,
+      [resource_type, vehicle_number, driver_name, driver_phone, latitude, longitude, status]
+    );
+
+    res.status(201).json({ success: true, resource: rows[0] });
+  } catch (error) {
+    console.error('Create resource error:', error);
+    res.status(500).json({ success: false, message: 'Error creating resource' });
+  }
+};
+
+exports.getNearbyResources = async (req, res) => {
+  try {
+    const latitude = Number(req.query.latitude);
+    const longitude = Number(req.query.longitude);
+    const radiusKm = Number(req.query.radius_km || 5);
+
+    if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+      return res.status(400).json({ success: false, message: 'latitude and longitude are required' });
+    }
+
+    const { rows } = await db.query(
+      `SELECT *,
+        (6371 * acos(
+          cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) +
+          sin(radians($1)) * sin(radians(latitude))
+        )) AS distance_km
+       FROM resources
+       WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+       ORDER BY distance_km ASC`,
+      [latitude, longitude]
+    );
+
+    const nearby = rows.filter((row) => Number(row.distance_km) <= radiusKm);
+    res.status(200).json({ success: true, resources: nearby });
+  } catch (error) {
+    console.error('Nearby resources error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching nearby resources' });
+  }
+};

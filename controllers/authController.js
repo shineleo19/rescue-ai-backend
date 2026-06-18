@@ -37,7 +37,12 @@ exports.verifyFirebaseToken = async (req, res) => {
 
     // generate backend jwt
     const payload = { id: user.id, phone: user.phone, user_type: user.user_type };
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRY });
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error('Missing JWT_SECRET environment variable');
+      return res.status(500).json({ success: false, message: 'Server configuration error' });
+    }
+    const token = jwt.sign(payload, jwtSecret, { expiresIn: process.env.JWT_EXPIRY || '30d' });
 
     res.status(200).json({ success: true, token, user });
   } catch (error) {
@@ -106,13 +111,18 @@ exports.firebaseLogin = async (req, res) => {
     const user = result.rows[0];
 
     // generate jwt (ensure JWT_SECRET present)
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error('Missing JWT_SECRET environment variable');
+      return res.status(500).json({ success: false, message: 'Server configuration error' });
+    }
     const token = jwt.sign(
-      { 
-        id: user.id, // Give the token your PostgreSQL database ID
+      {
+        id: user.id,
         phone: user.phone,
-        user_type: user.user_type // Helpful for Flutter to know if they are a volunteer
-      }, 
-      process.env.JWT_SECRET || 'your_super_secret_key_here', 
+        user_type: user.user_type
+      },
+      jwtSecret,
       { expiresIn: '30d' }
     );
 
@@ -130,29 +140,29 @@ exports.firebaseLogin = async (req, res) => {
   }
 };
 
-// return user profile by id
-exports.getUserProfile = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { rows } = await db.query(
-      `SELECT id, name, phone, user_type, is_available, 
-              blood_type, allergies, medical_conditions, 
-              emergency_contact_1, emergency_contact_1_phone, 
-              emergency_contact_2, emergency_contact_2_phone 
-       FROM users WHERE id = $1`,
-      [userId]
-    );
+// // return user profile by id
+// exports.getUserProfile = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const { rows } = await db.query(
+//       `SELECT id, name, phone, user_type, is_available, 
+//               blood_type, allergies, medical_conditions, 
+//               emergency_contact_1, emergency_contact_1_phone, 
+//               emergency_contact_2, emergency_contact_2_phone 
+//        FROM users WHERE id = $1`,
+//       [userId]
+//     );
 
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
-    res.status(200).json({
-      success: true,
-      user: rows[0]
-    });
+//     if (rows.length === 0) {
+//       return res.status(404).json({ success: false, message: 'User not found' });
+//     }
+//     res.status(200).json({
+//       success: true,
+//       user: rows[0]
+//     });
 
-  } catch (error) {
-    console.error("Fetch Profile Error:", error);
-    res.status(500).json({ success: false, message: 'Server error fetching profile' });
-  }
-};
+//   } catch (error) {
+//     console.error("Fetch Profile Error:", error);
+//     res.status(500).json({ success: false, message: 'Server error fetching profile' });
+//   }
+// };
