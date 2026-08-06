@@ -69,8 +69,9 @@ const db = require('../config/database');
 // update user's fcm token in db
 exports.updateFCMToken = async (req, res) => {
   try {
-    const { fcm_token } = req.body;
-    const user_id = req.user.id; // This comes from your JWT auth middleware
+    // 💡 FIX: Check for both fcm_token (snake_case) AND fcmToken (camelCase)
+    const fcm_token = req.body.fcm_token || req.body.fcmToken;
+    const user_id = req.user.id;
 
     if (!fcm_token) {
       return res.status(400).json({ success: false, message: "FCM token is required" });
